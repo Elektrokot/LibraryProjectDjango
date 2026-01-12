@@ -1,0 +1,56 @@
+[
+{
+    "model": "library.author",
+    "pk": 1,
+    "fields": {
+        "first_name": "Test",
+        "last_name": "Test",
+        "birth_day": "2025-12-30"
+    }
+},
+{
+    "model": "library.author",
+    "pk": 2,
+    "fields": {
+        "first_name": "Лев",
+        "last_name": "Толстой",
+        "birth_day": "1821-11-11"
+    }
+},
+{
+    "model": "library.author",
+    "pk": 3,
+    "fields": {
+        "first_name": "Фёдор",
+        "last_name": "Достоевский",
+        "birth_day": "1821-12-12"
+    }
+},
+{
+    "model": "library.book",
+    "pk": 1,
+    "fields": {
+        "title": "Testig_book",
+        "publication_date": "2025-12-30",
+        "author": 1
+    }
+},
+{
+    "model": "library.book",
+    "pk": 2,
+    "fields": {
+        "title": "Война и мир",
+        "publication_date": "1870-01-01",
+        "author": 2
+    }
+},
+{
+    "model": "library.book",
+    "pk": 4,
+    "fields": {
+        "title": "Преступление и наказание",
+        "publication_date": "1866-01-01",
+        "author": 3
+    }
+}
+]
