@@ -6,12 +6,20 @@ from django.db import migrations
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('library', '0001_initial'),
+        ("library", "0001_initial"),
     ]
 
     operations = [
         migrations.AlterModelOptions(
-            name='book',
-            options={'ordering': ['title'], 'permissions': [('can_review_book', 'Can review book'), ('can_rcommend_book', 'Can rcommend book')], 'verbose_name': 'Книга', 'verbose_name_plural': 'Книги'},
+            name="book",
+            options={
+                "ordering": ["title"],
+                "permissions": [
+                    ("can_review_book", "Can review book"),
+                    ("can_rcommend_book", "Can rcommend book"),
+                ],
+                "verbose_name": "Книга",
+                "verbose_name_plural": "Книги",
+            },
         ),
     ]
