@@ -148,3 +148,5 @@ if "test" in sys.argv:
             "NAME": BASE_DIR / "test_db.sqlite3",
         }
     }
+
+DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
