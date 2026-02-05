@@ -8,11 +8,11 @@ on:
 
 env:
   PYTHON_VERSION: "3.12"
-  DOCKER_HUB_USERNAME: ""
-  DOCKER_HUB_ACCESS_TOKEN: ""
-  SSH_PRIVATE_KEY: ""
-  SSH_USER: ""
-  SERVER_IP: ""
+  DOCKER_HUB_USERNAME: ${{ secrets.DOCKER_HUB_USERNAME }}
+  DOCKER_HUB_ACCESS_TOKEN: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
+  SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+  SSH_USER: ${{ secrets.SSH_USER }}
+  SERVER_IP: ${{ secrets.SERVER_IP }}
 
 jobs:
   lint:
@@ -60,12 +60,12 @@ jobs:
           POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
           POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
           POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
-        ports: ["5432:5432"]
-        options: >-
-          --health-cmd "pg_isready -U ${{ secrets.POSTGRES_USER }} -d ${{ secrets.POSTGRES_DB }}"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 5
+        ports: [ "5432:5432" ]
+        healthcheck:
+          test: [ "CMD-SHELL", "pg_isready -U $POSTGRES_USER -d $POSTGRES_DB" ]
+          interval: 5s
+          timeout: 5s
+          retries: 5
 
     steps:
       - name: Checkout repository
@@ -173,7 +173,7 @@ jobs:
           POSTGRES_PORT: ${{ secrets.POSTGRES_PORT }}
           POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
         run: |
-          ssh -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.SERVER_IP }} <<'EOF'
+          ssh -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.SERVER_IP }} <<EOF
             set -e
 
             # Создаем директорию для .env файла если её нет
