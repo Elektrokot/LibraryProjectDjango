@@ -1,52 +1,91 @@
+version: "3.9"
+
 services:
+  # --------------------------------------------------------------
+  # 1️⃣  Django / web‑приложение
+  # --------------------------------------------------------------
   web:
-    build: .
-    command: sh -c "python manage.py collectstatic --noinput && gunicorn config.wsgi:application --bind 0.0.0.0:8000"
-    volumes:
-      - .:/app
-      - static_volume:/app/staticfiles
-    expose:
-      - "8000"
-    depends_on:
-      - db
-      - redis
+    build:
+      context: ./web                     # <-- Dockerfile находится в ./web
+    # Сначала собираем static‑файлы, потом стартуем gunicorn
+    command: >-
+      sh -c "
+        python manage.py collectstatic --noinput &&
+        gunicorn config.wsgi:application --bind 0.0.0.0:8000
+      "
     env_file:
-      - ./.env
+      - ./.env                           # <-- переменные, которые нужны приложению
+    environment:
+      # Явно передаём переменные, которые нужны для подключения к БД/Redis
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    volumes:
+      - ./web:/app                        # код проекта (только для разработки)
+      - static_volume:/app/staticfiles   # том, где собираются static‑файлы
+    expose:
+      - "8000"                            # только внутри сети Docker
+    depends_on:
+      db:
+        condition: service_healthy       # ждать, пока Postgres будет готов
+      redis:
+        condition: service_healthy
     restart: unless-stopped
 
+  # --------------------------------------------------------------
+  # 2️⃣  Nginx – фронтенд, обслуживает static‑файлы и проксирует к web
+  # --------------------------------------------------------------
   nginx:
     build:
-      context: ./nginx
+      context: ./nginx                    # Dockerfile для nginx
     ports:
-      - "80:80"
+      - "80:80"                           # публичный порт 80 → контейнер 80
     volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
-      - static_volume:/app/staticfiles
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro   # конфиг только для чтения
+      - static_volume:/app/staticfiles:ro            # static‑файлы только для чтения
     depends_on:
-      - web
+      web:
+        condition: service_healthy
     restart: unless-stopped
 
+  # --------------------------------------------------------------
+  # 3️⃣  PostgreSQL
+  # --------------------------------------------------------------
   db:
-    image: postgres:16
+    image: postgres:16-alpine
     volumes:
       - postgres_data:/var/lib/postgresql/data/
-    env_file:
-       - ./.env
     environment:
-      POSTGRES_USER: ${DB_USER}
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
-      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "${POSTGRES_USER}", "-d", "${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
     restart: unless-stopped
 
+  # --------------------------------------------------------------
+  # 4️⃣  Redis (кеш / очередь задач)
+  # --------------------------------------------------------------
   redis:
-    image: redis:7
+    image: redis:7-alpine
     volumes:
       - redis_volume:/data
-    env_file:
-      - ./.env
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
+# --------------------------------------------------------------
+# Общие тома
+# --------------------------------------------------------------
 volumes:
   postgres_data:
-  static_volume:
   redis_volume:
+  static_volume:          # <-- сюда попадают файлы, собранные collectstatic

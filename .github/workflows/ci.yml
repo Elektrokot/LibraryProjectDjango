@@ -1,94 +1,323 @@
-name: Django CI
+name: Django CI / CD
 
-on: [push, pull_request]
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
 
+# ----------------------------------------------------------------------
+# 1️⃣  Общие переменные (можно переопределить в репо‑секретах)
+# ----------------------------------------------------------------------
+env:
+  # Python version, который будем использовать в каждом job'е
+  PYTHON_VERSION: "3.10"
+
+  # Ключи для Docker‑Hub (заполняются в Settings → Secrets → Actions)
+  DOCKER_HUB_USERNAME: ""
+  DOCKER_HUB_TOKEN: ""
+
+  # SSH‑доступ к продакшн‑серверу
+  DEPLOY_SSH_PRIVATE_KEY: ""          # multi‑line secret
+  DEPLOY_SSH_USER: ""
+  DEPLOY_SERVER_IP: ""
+
+# ----------------------------------------------------------------------
+# 2️⃣  Общая composite‑action для Python‑окружения
+# ----------------------------------------------------------------------
+x/python-setup: &python-setup
+  uses: actions/setup-python@v5
+  with:
+    python-version: ${{ env.PYTHON_VERSION }}
+
+  # Кешируем pip‑пакеты между запусками
+  - name: Cache pip
+    uses: actions/cache@v3
+    with:
+      path: ~/.cache/pip
+      key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements*.txt') }}
+      restore-keys: |
+        ${{ runner.os }}-pip-
+
+  # Устанавливаем зависимости (все из requirements*.txt)
+  - name: Install Python dependencies
+    run: |
+      python -m pip install --upgrade pip
+      pip install -r requirements.txt
+      # Если есть dev‑зависимости (тесты, lint) – установим их тоже
+      if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
+
+# ----------------------------------------------------------------------
+# 3️⃣  Job: Lint (flake8 + mypy)
+# ----------------------------------------------------------------------
 jobs:
   lint:
+    name: Lint (flake8 + mypy)
     runs-on: ubuntu-latest
-
     steps:
-      - name: Check out code
-        uses: actions/checkout@v3
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
-
-      - name: Install flake8
-        run: |
-          python -m pip install --upgrade pip
-          pip install flake8
-
-      - name: Run Flake8
-        run: flake8 .
-
-  test:
-    runs-on: ubuntu-latest
-    needs: lint
-
-    steps:
-      - name: Check out code
-        uses: actions/checkout@v3
-
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.10'
+          python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Cache pip
         uses: actions/cache@v3
         with:
           path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
-          restore-keys: ${{ runner.os }}-pip-
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements*.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
 
-      - name: Install dependencies
+      - name: Install linting tools
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install flake8 mypy  # добавим mypy для статической типизации
 
-      - name: Run migrations
+      - name: Run flake8
+        run: flake8 .
+
+      - name: Run mypy
+        # Если у вас нет типизации – можно закомментировать
+        run: mypy web
+
+# ----------------------------------------------------------------------
+# 4️⃣  Job: Test (DB + migrations + test suite)
+# ----------------------------------------------------------------------
+  test:
+    name: Test (Postgres + pytest)
+    runs-on: ubuntu-latest
+    needs: lint
+    services:
+      # Встроенный сервис‑контейнер PostgreSQL
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
+          POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+        ports: ["5432:5432"]
+        # Ждём, пока БД будет готова
+        options: >-
+          --health-cmd "pg_isready -U ${{ secrets.POSTGRES_USER }} -d ${{ secrets.POSTGRES_DB }}"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      # Переменные, которые нужны приложению
+      POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
+      POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
+      POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: 5432
+      DATABASE_URL: postgresql://${{ secrets.POSTGRES_USER }}:${{ secrets.POSTGRES_PASSWORD }}@${{ env.POSTGRES_HOST }}:${{ env.POSTGRES_PORT }}/${{ env.POSTGRES_DB }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ----- Общий Python‑setup (кеш, зависимости) -----
+      - <<: *python-setup
+
+      # ----- Ждём, пока PostgreSQL действительно готов (на всякий случай) -----
+      - name: Wait for PostgreSQL
+        run: |
+          for i in {1..30}; do
+            pg_isready -h localhost -p 5432 -U $POSTGRES_USER && break
+            echo "Postgres not ready yet, retry $i..."
+            sleep 3
+          done
+
+      # ----- Выполняем миграции и тесты -----
+      - name: Apply migrations
+        env:
+          DATABASE_URL: ${{ env.DATABASE_URL }}
         run: python manage.py migrate
 
-      - name: Run tests
+      - name: Run test suite
+        env:
+          DATABASE_URL: ${{ env.DATABASE_URL }}
         run: python manage.py test
 
+# ----------------------------------------------------------------------
+# 5️⃣  Job: Build Docker image (uses Docker Hub credentials)
+# ----------------------------------------------------------------------
   build:
+    name: Build & Push Docker image
     runs-on: ubuntu-latest
     needs: test
+    permissions:
+      contents: read
+      packages: write
+      # нужен для push‑action
+      id-token: write
 
     steps:
-      - name: Check out code
-        uses: actions/checkout@v3
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
+      # ----- Docker‑login (используем официальную action) -----
       - name: Log in to Docker Hub
-        run: echo ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }} | docker login -u ${{ secrets.DOCKER_HUB_USERNAME }} --password-stdin
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_HUB_USERNAME }}
+          password: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
 
-      - name: Build Docker image
-        run: docker build -t ${{ secrets.DOCKER_HUB_USERNAME }}/myapp:${{ github.sha }} .
+      # ----- Build & push (мульти‑tag: latest + sha) -----
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./web                     # <-- путь к Dockerfile
+          push: true
+          tags: |
+            ${{ secrets.DOCKER_HUB_USERNAME }}/myapp:latest
+            ${{ secrets.DOCKER_HUB_USERNAME }}/myapp:${{ github.sha }}
+          cache-from: type=registry,ref=${{ secrets.DOCKER_HUB_USERNAME }}/myapp:cache
+          cache-to: type=registry,ref=${{ secrets.DOCKER_HUB_USERNAME }}/myapp:cache,mode=max
+          # Включаем BuildKit (быстрее, параллельные слои)
+          push: true
+          provenance: false
 
-      - name: Push Docker image to Docker Hub
-        run: docker push ${{ secrets.DOCKER_HUB_USERNAME }}/myapp:${{ github.sha }}
-
+# ----------------------------------------------------------------------
+# 6️⃣  Job: Deploy (SSH‑based)
+# ----------------------------------------------------------------------
   deploy:
+    name: Deploy to server
     runs-on: ubuntu-latest
     needs: build
-
+    if: github.ref == 'refs/heads/main'   # деплой только из main
     steps:
-      - name: Set up SSH
+      # ----- Подготовка SSH‑ключа -----
+      - name: Set up SSH agent
         uses: webfactory/ssh-agent@v0.8.1
         with:
-          ssh-private-keys: ${{ secrets.SSH_KEY_SERVER }}
+          ssh-private-key: ${{ secrets.SSH_KEY_SERVER }}
 
-      - name: Deploy to server
+      # ----- Проверяем, что IP и пользователь заданы -----
+      - name: Verify deployment variables
         run: |
-          ssh -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.SERVER_IP }} << 'EOF'
-          docker pull ${{ secrets.DOCKER_HUB_USERNAME }}/myapp:${{ github.sha }}
-          docker stop myapp || true
-          docker rm myapp || true
-          docker run -d --name myapp -p 80:8000 ${{ secrets.DOCKER_HUB_USERNAME }}/myapp:${{ github.sha }}
+          if [ -z "${{ secrets.SSH_USER }}" ] || [ -z "${{ secrets.SERVER_IP }}" ]; then
+            echo "❌  SSH_USER or SERVER_IP secret is missing"
+            exit 1
+          fi
+
+      # ----- Выполняем команды на удалённом сервере -----
+      - name: Deploy to production
+        env:
+          IMAGE_NAME: ${{ secrets.DOCKER_HUB_USERNAME }}/myapp:${{ github.sha }}
+        run: |
+          ssh -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.SERVER_IP }} <<'EOF'
+            set -e
+            echo "🔽 Pulling latest image..."
+            docker pull $IMAGE_NAME
+
+            echo "🛑 Stopping & removing old container (if any)..."
+            docker stop myapp || true
+            docker rm myapp || true
+
+            echo "🚀 Starting new container..."
+            docker run -d \
+              --name myapp \
+              -p 80:8000 \
+              --restart unless-stopped \
+              $IMAGE_NAME
           EOF
+
+
+#name: Django CI
+#
+#on: [push, pull_request]
+#
+#jobs:
+#  lint:
+#    runs-on: ubuntu-latest
+#
+#    steps:
+#      - name: Check out code
+#        uses: actions/checkout@v3
+#
+#      - name: Set up Python
+#        uses: actions/setup-python@v4
+#        with:
+#          python-version: '3.10'
+#
+#      - name: Install flake8
+#        run: |
+#          python -m pip install --upgrade pip
+#          pip install flake8
+#
+#      - name: Run Flake8
+#        run: flake8 .
+#
+#  test:
+#    runs-on: ubuntu-latest
+#    needs: lint
+#
+#    steps:
+#      - name: Check out code
+#        uses: actions/checkout@v3
+#
+#      - name: Set up Python
+#        uses: actions/setup-python@v4
+#        with:
+#          python-version: '3.10'
+#
+#      - name: Cache pip
+#        uses: actions/cache@v3
+#        with:
+#          path: ~/.cache/pip
+#          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+#          restore-keys: ${{ runner.os }}-pip-
+#
+#      - name: Install dependencies
+#        run: |
+#          python -m pip install --upgrade pip
+#          pip install -r requirements.txt
+#
+#      - name: Run migrations
+#        run: python manage.py migrate
+#
+#      - name: Run tests
+#        run: python manage.py test
+#
+#  build:
+#    runs-on: ubuntu-latest
+#    needs: test
+#
+#    steps:
+#      - name: Check out code
+#        uses: actions/checkout@v3
+#
+#      - name: Log in to Docker Hub
+#        run: echo ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }} | docker login -u ${{ secrets.DOCKER_HUB_USERNAME }} --password-stdin
+#
+#      - name: Build Docker image
+#        run: docker build -t ${{ secrets.DOCKER_HUB_USERNAME }}/myapp:${{ github.sha }} .
+#
+#      - name: Push Docker image to Docker Hub
+#        run: docker push ${{ secrets.DOCKER_HUB_USERNAME }}/myapp:${{ github.sha }}
+#
+#  deploy:
+#    runs-on: ubuntu-latest
+#    needs: build
+#
+#    steps:
+#      - name: Set up SSH
+#        uses: webfactory/ssh-agent@v0.8.1
+#        with:
+#          ssh-private-keys: ${{ secrets.SSH_KEY_SERVER }}
+#
+#      - name: Deploy to server
+#        run: |
+#          ssh -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.SERVER_IP }} << 'EOF'
+#          docker pull ${{ secrets.DOCKER_HUB_USERNAME }}/myapp:${{ github.sha }}
+#          docker stop myapp || true
+#          docker rm myapp || true
+#          docker run -d --name myapp -p 80:8000 ${{ secrets.DOCKER_HUB_USERNAME }}/myapp:${{ github.sha }}
+#          EOF
           
 
 #      - name: Copy project files to server
