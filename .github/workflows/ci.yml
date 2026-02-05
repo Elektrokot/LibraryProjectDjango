@@ -91,17 +91,22 @@ jobs:
           if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
 
       - name: Wait for PostgreSQL
+        env:
+          PGUSER: ${{ secrets.POSTGRES_USER }}
         run: |
           for i in {1..30}; do
-            pg_isready -h localhost -p 5432 -U ${{ secrets.POSTGRES_USER }} && break
+            pg_isready -h localhost -p 5432 -U $PGUSER && break
             echo "Postgres not ready yet, retry $i..."
             sleep 3
           done
 
       - name: Apply migrations
         env:
-          DATABASE_URL: postgresql://${{ secrets.POSTGRES_USER }}:${{ secrets.POSTGRES_PASSWORD }}@localhost:5432/${{ secrets.POSTGRES_DB }}
-        run: python manage.py migrate
+          DATABASE_URL: >-
+            postgresql://${{ secrets.POSTGRES_USER }}:${{ secrets.POSTGRES_PASSWORD }}@localhost:5432/${{ secrets.POSTGRES_DB }}
+        run: |
+          echo "🔧 Applying migrations..."
+          python manage.py migrate
 
       - name: Run test
         env:
