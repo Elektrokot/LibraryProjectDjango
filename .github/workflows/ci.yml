@@ -61,11 +61,11 @@ jobs:
           POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
           POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
         ports: [ "5432:5432" ]
-        healthcheck:
-          test: [ "CMD-SHELL", "pg_isready -U $POSTGRES_USER -d $POSTGRES_DB" ]
-          interval: 5s
-          timeout: 5s
-          retries: 5
+        options: >-
+          --health-cmd "pg_isready -U $POSTGRES_USER -d $POSTGRES_DB"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
 
     steps:
       - name: Checkout repository
