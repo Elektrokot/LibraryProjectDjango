@@ -95,10 +95,10 @@ jobs:
           DATABASE_URL: >-
             postgresql://${{ secrets.POSTGRES_USER }}:${{ secrets.POSTGRES_PASSWORD }}@localhost:5432/${{ secrets.POSTGRES_DB }}
         run: |
-          for i in {1..30}; do
-            pg_isready -h postgres -p 5432 -U ${{ secrets.POSTGRES_USER }} && break
+          for i in {1..10}; do
+            pg_isready -h localhost -p 5432 -U ${{ secrets.POSTGRES_USER }} && break
             echo "Postgres ещё не готов – попытка $i"
-            sleep 3
+            sleep 2
           done
       
           python manage.py migrate
