@@ -55,7 +55,7 @@ jobs:
     needs: lint
     services:
       postgres:
-        image: postgres:16-alpine
+        image: postgres:16.0-alpine3.18
         env:
           POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
           POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
@@ -92,9 +92,8 @@ jobs:
 
       - name: Apply migrations
         env:
-          # Формируем строку подключения через сервис‑контейнер `postgres`
           DATABASE_URL: >-
-            postgresql://${{ secrets.POSTGRES_USER }}:${{ secrets.POSTGRES_PASSWORD }}@postgres:5432/${{ secrets.POSTGRES_DB }}
+            postgresql://${{ secrets.POSTGRES_USER }}:${{ secrets.POSTGRES_PASSWORD }}@localhost:5432/${{ secrets.POSTGRES_DB }}
         run: |
           for i in {1..30}; do
             pg_isready -h postgres -p 5432 -U ${{ secrets.POSTGRES_USER }} && break
