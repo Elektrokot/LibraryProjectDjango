@@ -41,49 +41,21 @@ RUN groupadd --gid 1001 appuser \
 WORKDIR /app
 RUN mkdir -p /app/staticfiles && chown -R appuser:appuser /app
 
-# Копируем только нужные файлы из builder‑stage
+# Копируем только нужные файлы из builder-stage
 COPY --from=builder /install /usr/local
 COPY --from=builder /app /app
-
-# Если в проекте есть миграции/static, их тоже нужно скопировать.
-# (В данном случае они уже находятся в /app после копирования.)
-
-# ---->  Healthcheck – проверяем, что gunicorn отвечает
-HEALTHCHECK --interval=10s --timeout=5s --retries=3 \
-  CMD curl -f http://localhost:8000/healthz || exit 1
-
-# Порт, который будет слушать gunicorn
-EXPOSE 8000
 
 # --------------------------------------------------------------
 # 3️⃣  Финальный пользователь и команда
 # --------------------------------------------------------------
 USER appuser
 
-# Поскольку collectstatic нужно выполнить **только один раз** при сборке,
-# делаем это на этапе сборки (в builder‑stage). В runtime‑stage
-# просто стартуем gunicorn.
+# HEALTHCHECK нужно выполнить после USER, иначе может быть проблема с доступом
+HEALTHCHECK --interval=10s --timeout=5s --retries=3 \
+  CMD curl -f http://localhost:8000/healthz || exit 1
+
+# Порт, который будет слушать gunicorn
+EXPOSE 8000
+
+# Если в проекте есть collectstatic - его нужно выполнить при запуске или в CI
 CMD ["gunicorn", "config.wsgi:application", "--workers", "3", "--bind", "0.0.0.0:8000"]
-
-
-
-#FROM python:3.12-slim
-#
-#WORKDIR /app
-#
-#RUN apt-get update \
-#    && apt-get install -y gcc libpq-dev \
-#    && apt-get clean \
-#    && rm -rf /var/lib/apt/lists/*
-#
-#COPY requirements.txt .
-#
-#RUN pip install --no-cache-dir -r requirements.txt
-#
-#COPY . .
-#
-#RUN mkdir -p /app/staticfiles && chmod -R 755 /app/staticfiles
-#
-#EXPOSE 8000
-#
-#CMD ["sh", "-c", "python manage.py collectstatic --noinput && gunicorn config.wsgi:application --bind 0.0.0.0:8000"]
