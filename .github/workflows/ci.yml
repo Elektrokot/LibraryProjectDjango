@@ -93,10 +93,10 @@ jobs:
       - name: Apply migrations
         env:
           DATABASE_URL: >-
-            postgresql://${{ secrets.POSTGRES_USER }}:${{ secrets.POSTGRES_PASSWORD }}@localhost:5432/${{ secrets.POSTGRES_DB }}
+            postgresql://${{ secrets.POSTGRES_USER }}:${{ secrets.POSTGRES_PASSWORD }}@127.0.0.1:5432/${{ secrets.POSTGRES_DB }}
         run: |
           for i in {1..10}; do
-            pg_isready -h localhost -p 5432 -U ${{ secrets.POSTGRES_USER }} && break
+            pg_isready -h 127.0.0.1 -p 5432 -U ${{ secrets.POSTGRES_USER }} && break
             echo "Postgres ещё не готов – попытка $i"
             sleep 2
           done
