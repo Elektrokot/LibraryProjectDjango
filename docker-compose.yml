@@ -12,7 +12,6 @@ services:
       - redis
     env_file:
       - ./.env
-    restart: unless-stopped
 
   nginx:
     build:
@@ -24,7 +23,6 @@ services:
       - static_volume:/app/staticfiles
     depends_on:
       - web
-    restart: unless-stopped
 
   db:
     image: postgres:16
@@ -32,11 +30,6 @@ services:
       - postgres_data:/var/lib/postgresql/data/
     env_file:
        - ./.env
-    environment:
-      POSTGRES_USER: ${DB_USER}
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
-      POSTGRES_DB: ${DB_NAME}
-    restart: unless-stopped
 
   redis:
     image: redis:7
@@ -44,7 +37,6 @@ services:
       - redis_volume:/data
     env_file:
       - ./.env
-    restart: unless-stopped
 
 volumes:
   postgres_data:
