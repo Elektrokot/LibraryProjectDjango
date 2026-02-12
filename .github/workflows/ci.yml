@@ -103,10 +103,8 @@ jobs:
       - name: Deploy to server
         run: |
           ssh -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.SERVER_IP }} << 'EOF'
-            cd ${{ secrets.DEPLOY_DIR }}
             docker pull ${{ secrets.DOCKER_HUB_USERNAME }}/libraryprojectdjango:${{ github.sha }}
             docker stop LibraryProjectDjango || true
-            docker rm -f LibraryProjectDjango || true
-            sleep 10  # ждём, пока порт освободится
+            docker rm LibraryProjectDjango || true
             docker run -d --name LibraryProjectDjango -p 80:8000 ${{ secrets.DOCKER_HUB_USERNAME }}/libraryprojectdjango:${{ github.sha }}
           EOF
