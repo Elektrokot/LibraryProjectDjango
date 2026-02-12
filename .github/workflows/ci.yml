@@ -106,6 +106,7 @@ jobs:
             cd ${{ secrets.DEPLOY_DIR }}
             docker pull ${{ secrets.DOCKER_HUB_USERNAME }}/libraryprojectdjango:${{ github.sha }}
             docker stop LibraryProjectDjango || true
-            docker rm LibraryProjectDjango || true
+            docker rm -f LibraryProjectDjango || true
+            sleep 10  # ждём, пока порт освободится
             docker run -d --name LibraryProjectDjango -p 80:8000 ${{ secrets.DOCKER_HUB_USERNAME }}/libraryprojectdjango:${{ github.sha }}
           EOF
