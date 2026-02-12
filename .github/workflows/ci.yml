@@ -103,8 +103,8 @@ jobs:
       - name: Deploy to server
         run: |
           ssh -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.SERVER_IP }} << 'EOF'
-          docker pull ${{ secrets.DOCKER_HUB_USERNAME }}/library:${{ github.sha }}
-          docker stop library || true
-          docker rm library || true
-          docker run -d --name library -p 80:8000 ${{ secrets.DOCKER_HUB_USERNAME }}/library:${{ github.sha }}
+            cd /home/
+            git pull origin main
+            docker compose down
+            docker compose up -d --build
           EOF
