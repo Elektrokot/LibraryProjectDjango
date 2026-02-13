@@ -35,8 +35,6 @@ services:
     image: redis:7
     volumes:
       - redis_volume:/data
-    env_file:
-      - ./.env
 
 volumes:
   postgres_data:

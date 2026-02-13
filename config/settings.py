@@ -1,5 +1,4 @@
 import os
-import sys
 
 from dotenv import load_dotenv
 from pathlib import Path
@@ -110,16 +109,8 @@ LOGIN_URL = "users:login"
 CACHES = {
     "default": {
         "BACKEND": "django.core.cache.backends.redis.RedisCache",
-        "LOCATION": "redis://redis:6379/1",
+        "LOCATION": os.getenv("REDIS_URL"),
     }
 }
-
-if "test" in sys.argv:
-    DATABASES = {
-        "default": {
-            "ENGINE": "django.db.backends.sqlite3",
-            "NAME": BASE_DIR / "test_db.sqlite3",
-        }
-    }
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"

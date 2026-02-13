@@ -10,7 +10,7 @@ cd LibraryProjectDjango
 
 2. Создайте `.env` на основе `.env.example`:
 ```bash
-cp .env.example .env
+cp .env.sample .env
 ```
 
 3. Запустите с помощью Docker Compose:
